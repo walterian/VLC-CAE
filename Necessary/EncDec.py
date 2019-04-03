@@ -11,7 +11,7 @@ import keras
 from keras.utils import plot_model
 from keras.utils import to_categorical
 from keras.models import Sequential, Model
-from keras.layers import Dense, Activation, Flatten, Reshape, Input
+from keras.layers import Dense, Activation, Flatten, Reshape, Input, Lambda
 from keras.layers import Conv2D, Dropout, MaxPooling2D, UpSampling2D
 from keras.layers import BatchNormalization, GaussianNoise
 from keras.callbacks import History
@@ -22,6 +22,7 @@ from numpy import array
 M = 128
 L = 5
 numepochs = 25
+delta = 1
 
 
 # One hot encoding
@@ -54,8 +55,9 @@ def Encoder():
     e8 = Conv2D(2*M, kernel_size=(3, 3), padding='same', activation='relu')(e7)       # Conv_2, 2M 3x3 filters
     e9 = BatchNormalization()(e8)
     e10 = MaxPooling2D()(e9)
-    e11 = Conv2D(1, kernel_size=(3, 3), padding='same', activation='sigmoid')(e10)      # Conv_3, 1 3x3 filters
-    return Model(input_img, e11)
+    e11 = Conv2D(1, kernel_size=(3, 3), padding='same')(e10)      # Conv_3, 1 3x3 filters 
+    sigmoid = Lambda(lambda x: 1/(1 + 2.718281 ** (-x*delta)))(e11)
+    return Model(input_img, sigmoid)
 # End Encoder layer
 
 def Decoder():
@@ -70,7 +72,6 @@ def Decoder():
     d5 = BatchNormalization()(d4)
     d6 = MaxPooling2D()(d5)
     d7 = Reshape((1, 1, -1))(d6)
-#    d7 = Flatten()(d6)
     d8 = Dense(M, activation='relu')(d7)
     d9 = BatchNormalization()(d8)
     d10 = Dense(M, activation='softmax')(d9)                 # output layer, output size M
@@ -78,17 +79,43 @@ def Decoder():
 
 x = Input(shape=(1, 1, M))
 
-cae = Model(x, Decoder()(Encoder()(x)))
+numepochs = 10
+for delta in np.arange(1, 4):
+    print('delta = ', delta)
+    cae = Model(x, Decoder()(Encoder()(x)))
 
+    # model train
+    cae.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    if delta != 1:
+        cae.load_weights('saved_weights.h5')
+        encoder = cae.layers[1]
+        predicted = encoder.predict(xdata)
+        print(predicted[1][:, ...])
+    
+    history = History()
+    cae.fit(xdata, ydata, epochs=numepochs, validation_data=(xvaldata, yvaldata), batch_size=32, callbacks=[history])
 
-cae.summary()
-cae.layers[1].summary()
-cae.layers[2].summary()
-# model train
-cae.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    cae.save_weights('saved_weights.h5')
 
-history = History()
-cae.fit(xdata, ydata, epochs=numepochs, validation_data=(xvaldata, yvaldata), batch_size=32, callbacks=[history])
+numepochs = 25
+for delta in np.arange(3.0, 5.0, 0.1):
+
+    encoder = cae.layers[1]
+    predicted = encoder.predict(xdata)
+
+    print('delta = ', delta)
+    print(predicted[1][:, ...])
+    cae = Model(x, Decoder()(Encoder()(x)))
+
+    # model train
+    cae.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    if delta != 1:
+        cae.load_weights('saved_weights.h5')
+    
+    history = History()
+    cae.fit(xdata, ydata, epochs=numepochs, validation_data=(xvaldata, yvaldata), batch_size=32, callbacks=[history])
+
+    cae.save_weights('saved_weights.h5')
 
 cae.save('trained_cae.h5')
 
@@ -103,6 +130,10 @@ decoder.load_weights('decoder_weights.h5')
 encoder.save('trained_encoder.h5')
 decoder.save('trained_decoder.h5')
 
+
+
+
+predicted = encoder.predict(xdata)
 
 import matplotlib.pyplot as plt
 
