@@ -16,6 +16,7 @@ M = 64
 L = 5
 numepochs = 200
 batchsize = 32
+C = 1 # average signal strength of unity (not 100% accurate but hopefully good enough to test)
 SNR = 100
 
 # One hot encoding/data generation
@@ -51,7 +52,7 @@ def Channel():
     input_img = Input(shape=(L, L, 1))
     d01 = UpSampling2D(size=(2,2))(input_img)
     d02 = ZeroPadding2D(padding=9)(d01)
-    d03 = GaussianNoise(stddev=np.sqrt(1/(2*10**(SNR/10))))(d02)        # add noise to channel simulation
+    d03 = GaussianNoise(stddev=np.sqrt(C/(10**(SNR/10))))(d02)        # add noise to channel simulation
     return Model(input_img, d03)
 def Decoder():
     # Start Decoder
@@ -75,7 +76,7 @@ callbacks = [EarlyStopping(monitor='val_loss', patience=100),
              History()]
 adam = keras.optimizers.Adam(clipnorm=1., clipvalue=0.5, amsgrad=True)   # clipnorm is necessary to prevent gradients from blowing up (weights = NaN)
 
-for delta in np.arange(1, 4):
+for delta in np.arange(1, 5):
     print('delta = ', delta)
     cae = Model(x, Decoder()(Channel()(Encoder()(x))))
     # model training
@@ -83,6 +84,10 @@ for delta in np.arange(1, 4):
     if delta != 1:
         cae.load_weights('saved_weights.h5')
     cae.fit(xdata, ydata, epochs=numepochs, validation_data=(xvaldata, yvaldata), batch_size=batchsize, callbacks=callbacks)
+
+    
+    plt.plot(callbacks[2].history['val_loss'], label=('delta: '+str(delta)))
+    
 # Issue here is that training fails when delta > 3, so possible solution is to
 # train up to delta = 3, then save weights -> create network with delta = 10 or 100 etc. and load weights
 # then just use that network; it's far from ideal but could get us OOK
@@ -125,6 +130,15 @@ decoder.save('trained_decoder.h5')
 
 predicted = encoder.predict(xdata)
 
+
+# Plot training & validation loss values
+plt.title('Model loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend(loc='upper left')
+plt.show()
+
+'''
 # Plot training & validation accuracy values
 plt.plot(callbacks[2].history['acc'])
 plt.plot(callbacks[2].history['val_acc'])
@@ -132,13 +146,5 @@ plt.title('Model accuracy')
 plt.ylabel('Accuracy')
 plt.xlabel('Epoch')
 plt.legend(['Train', 'Test'], loc='upper left')
-plt.show()
+plt.show()'''
 
-# Plot training & validation loss values
-plt.plot(callbacks[2].history['loss'])
-plt.plot(callbacks[2].history['val_loss'])
-plt.title('Model loss')
-plt.ylabel('Loss')
-plt.xlabel('Epoch')
-plt.legend(['Train', 'Test'], loc='upper left')
-plt.show()
