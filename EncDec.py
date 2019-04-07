@@ -35,8 +35,8 @@ xvaldata = xdata
 def Encoder():
     input_img = Input(shape=(1, 1, M))
     e1 = Dense(M, activation='relu')(input_img)     # input layer, output size M
-    e11 = BatchNormalization()(e1)
-    e2 = Dense(16*L*L, activation='relu')(e11)
+    e01 = BatchNormalization()(e1)
+    e2 = Dense(16*L*L, activation='relu')(e01)
     e3 = BatchNormalization()(e2)
     e4 = Reshape((4*L, 4*L, -1))(e3)
     e5 = Conv2D(M, kernel_size=(3, 3), padding='same', activation='relu')(e4)          # Conv_1, M 3x3 filters
@@ -68,35 +68,11 @@ def Decoder():
     d9 = BatchNormalization()(d8)
     d10 = Dense(M, activation='softmax')(d9)                 # output layer, output size M
     return Model(input_enc, d10)
-
-x = Input(shape=(1, 1, M))
-# Define callbacks to be monitored during training time
-callbacks = [EarlyStopping(monitor='val_loss', patience=100),
-             ModelCheckpoint(filepath='saved_weights.h5', monitor='val_loss', save_best_only=True, save_weights_only=True),
-             History()]
-adam = keras.optimizers.Adam(clipnorm=1., clipvalue=0.5, amsgrad=True)   # clipnorm is necessary to prevent gradients from blowing up (weights = NaN)
-
-for delta in np.arange(1, 5):
-    print('delta = ', delta)
-    cae = Model(x, Decoder()(Channel()(Encoder()(x))))
-    # model training
-    cae.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
-    if delta != 1:
-        cae.load_weights('saved_weights.h5')
-    cae.fit(xdata, ydata, epochs=numepochs, validation_data=(xvaldata, yvaldata), batch_size=batchsize, callbacks=callbacks)
-
-    
-    plt.plot(callbacks[2].history['val_loss'], label=('delta: '+str(delta)))
-    
-# Issue here is that training fails when delta > 3, so possible solution is to
-# train up to delta = 3, then save weights -> create network with delta = 10 or 100 etc. and load weights
-# then just use that network; it's far from ideal but could get us OOK
-
 def Encoder_Test():
     input_img = Input(shape=(1, 1, M))
     e1 = Dense(M, activation='relu')(input_img)     # input layer, output size M
-    e11 = BatchNormalization()(e1)
-    e2 = Dense(16*L*L, activation='relu')(e11)
+    e01 = BatchNormalization()(e1)
+    e2 = Dense(16*L*L, activation='relu')(e01)
     e3 = BatchNormalization()(e2)
     e4 = Reshape((4*L, 4*L, -1))(e3)
     e5 = Conv2D(M, kernel_size=(3, 3), padding='same', activation='relu')(e4)          # Conv_1, M 3x3 filters
@@ -109,12 +85,42 @@ def Encoder_Test():
     sigmoid = Lambda(lambda x: 1/(1 + 2.718281 ** (-x*1000)))(e11)
     return Model(input_img, sigmoid)
 
-cae = Model(x, Decoder()(Channel()(Encoder_Test()(x))))
-cae.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
-cae.load_weights('saved_weights.h5')
-cae.summary()
-cae.save('Trained/trained_cae_snr_'+str(SNR)+'.h5')
+x = Input(shape=(1, 1, M))
+# Define callbacks to be monitored during training time
+callbacks = [EarlyStopping(monitor='loss', patience=200),
+             ModelCheckpoint(filepath='saved_weights.h5', monitor='loss', save_best_only=True, save_weights_only=True),
+             History()]
+adam = keras.optimizers.Adam(clipnorm=.1, clipvalue=0.1, amsgrad=True)   # clipnorm is necessary to prevent gradients from blowing up (weights = NaN)
+for SNR in np.arange(0, 21, 2):
+    for delta in np.arange(1, 4):
+        print('delta = ', delta)
+        cae = Model(x, Decoder()(Channel()(Encoder()(x))))
+        # model training
+        cae.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
+        if delta != 1:
+            cae.load_weights('saved_weights.h5')
+        cae.fit(xdata, ydata, epochs=numepochs, validation_data=(xvaldata, yvaldata), batch_size=batchsize, callbacks=callbacks)
+        plt.plot(callbacks[2].history['loss'], label=('delta: '+str(delta)))
+    plt.title('Model loss')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend(loc='upper left')
+    plt.savefig('TrainingGraphs/inputs_'+str(M)+'_del_'+str(delta)+'_snr_'+str(SNR)+'.png')
+    plt.clf()
 
+    cae = Model(x, Decoder()(Channel()(Encoder_Test()(x))))
+    cae.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
+    cae.load_weights('saved_weights.h5')
+    #cae.summary()
+    cae.save('Trained/inputs_'+str(M)+'_del_'+str(delta)+'_snr_'+str(SNR)+'.h5')
+            
+# Issue here is that training fails when delta > 3, so possible solution is to
+# train up to delta = 3, then save weights -> create network with delta = 10 or 100 etc. and load weights
+# then just use that network; it's far from ideal but could get us OOK
+
+
+
+'''
 encoder = cae.layers[1]
 decoder = cae.layers[3]
 encoder.summary()
@@ -132,13 +138,9 @@ predicted = encoder.predict(xdata)
 
 
 # Plot training & validation loss values
-plt.title('Model loss')
-plt.ylabel('Loss')
-plt.xlabel('Epoch')
-plt.legend(loc='upper left')
-plt.show()
 
-'''
+
+
 # Plot training & validation accuracy values
 plt.plot(callbacks[2].history['acc'])
 plt.plot(callbacks[2].history['val_acc'])
