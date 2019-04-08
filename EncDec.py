@@ -1,7 +1,7 @@
 import keras
 import matplotlib.pyplot as plt
 import numpy as np
-import tensorflow
+import tensorflow as tf
 from keras.callbacks import EarlyStopping, History, ModelCheckpoint
 from keras.layers import (Activation, BatchNormalization, Conv2D, Dense,
                           Dropout, Flatten, GaussianNoise, Input, Lambda,
@@ -14,10 +14,10 @@ from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 # definitions
 M = 64
 L = 5
-numepochs = 200
-batchsize = 32
-C = 1 # average signal strength of unity (not 100% accurate but hopefully good enough to test)
-SNR = 100
+numepochs = 50
+batchsize = 64
+C = 1 # average signal strength is unity (not 100% accurate but hopefully good enough to test)
+SNR = 200
 
 # One hot encoding/data generation
 rawdata = np.zeros(M)
@@ -50,8 +50,8 @@ def Encoder():
     return Model(input_img, sigmoid)
 def Channel():
     input_img = Input(shape=(L, L, 1))
-    d01 = UpSampling2D(size=(2,2))(input_img)
-    d02 = ZeroPadding2D(padding=9)(d01)
+    d01 = UpSampling2D(size=(4,4))(input_img)
+    d02 = ZeroPadding2D(padding=4)(d01)
     d03 = GaussianNoise(stddev=np.sqrt(C/(10**(SNR/10))))(d02)        # add noise to channel simulation
     return Model(input_img, d03)
 def Decoder():
@@ -82,25 +82,25 @@ def Encoder_Test():
     e9 = BatchNormalization()(e8)
     e10 = MaxPooling2D()(e9)
     e11 = Conv2D(1, kernel_size=(3, 3), padding='same')(e10)      # Conv_3, 1 3x3 filters 
-    sigmoid = Lambda(lambda x: 1/(1 + 2.718281 ** (-x*1000)))(e11)
+    sigmoid = Lambda(lambda x: 1/(1 + 2.718281 ** (-x*5)))(e11)
     return Model(input_img, sigmoid)
 
-x = Input(shape=(1, 1, M))
+inp = Input(shape=(1, 1, M))
 # Define callbacks to be monitored during training time
-callbacks = [EarlyStopping(monitor='loss', patience=200),
+callbacks = [History(),
              ModelCheckpoint(filepath='saved_weights.h5', monitor='loss', save_best_only=True, save_weights_only=True),
-             History()]
-adam = keras.optimizers.Adam(clipnorm=.1, clipvalue=0.1, amsgrad=True)   # clipnorm is necessary to prevent gradients from blowing up (weights = NaN)
-for SNR in np.arange(0, 21, 2):
-    for delta in np.arange(1, 4):
+             EarlyStopping(monitor='loss', patience=20)]
+adam = keras.optimizers.Adam(clipnorm=1., clipvalue=0.1, amsgrad=True)   # clipnorm is necessary to prevent gradients from blowing up (weights = NaN)
+for SNR in np.arange(SNR, SNR+1, 2):
+    for delta in np.arange(1, 6):
         print('delta = ', delta)
-        cae = Model(x, Decoder()(Channel()(Encoder()(x))))
+        cae = Model(inp, Decoder()(Channel()(Encoder()(inp))))
         # model training
         cae.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
         if delta != 1:
             cae.load_weights('saved_weights.h5')
-        cae.fit(xdata, ydata, epochs=numepochs, validation_data=(xvaldata, yvaldata), batch_size=batchsize, callbacks=callbacks)
-        plt.plot(callbacks[2].history['loss'], label=('delta: '+str(delta)))
+        cae.fit(xdata, ydata, epochs=numepochs, batch_size=batchsize, callbacks=callbacks)
+        plt.plot(callbacks[0].history['loss'], label=('delta: '+str(delta)))
     plt.title('Model loss')
     plt.ylabel('Loss')
     plt.xlabel('Epoch')
@@ -108,18 +108,14 @@ for SNR in np.arange(0, 21, 2):
     plt.savefig('TrainingGraphs/inputs_'+str(M)+'_del_'+str(delta)+'_snr_'+str(SNR)+'.png')
     plt.clf()
 
-    cae = Model(x, Decoder()(Channel()(Encoder_Test()(x))))
+    cae = Model(inp, Decoder()(Channel()(Encoder_Test()(inp))))
     cae.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
     cae.load_weights('saved_weights.h5')
-    #cae.summary()
     cae.save('Trained/inputs_'+str(M)+'_del_'+str(delta)+'_snr_'+str(SNR)+'.h5')
             
-# Issue here is that training fails when delta > 3, so possible solution is to
-# train up to delta = 3, then save weights -> create network with delta = 10 or 100 etc. and load weights
-# then just use that network; it's far from ideal but could get us OOK
+predict = cae.predict(data)
 
-
-
+print(predict)
 '''
 encoder = cae.layers[1]
 decoder = cae.layers[3]
