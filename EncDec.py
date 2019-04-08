@@ -82,17 +82,17 @@ def Encoder_Test():
     e9 = BatchNormalization()(e8)
     e10 = MaxPooling2D()(e9)
     e11 = Conv2D(1, kernel_size=(3, 3), padding='same')(e10)      # Conv_3, 1 3x3 filters 
-    sigmoid = Lambda(lambda x: 1/(1 + 2.718281 ** (-x*5)))(e11)
+    sigmoid = Lambda(lambda x: 1/(1 + 2.718281 ** (-x*1000)))(e11)
     return Model(input_img, sigmoid)
 
 inp = Input(shape=(1, 1, M))
 # Define callbacks to be monitored during training time
 callbacks = [History(),
              ModelCheckpoint(filepath='saved_weights.h5', monitor='loss', save_best_only=True, save_weights_only=True),
-             EarlyStopping(monitor='loss', patience=20)]
+             EarlyStopping(monitor='loss', patience=50)]
 adam = keras.optimizers.Adam(clipnorm=1., clipvalue=0.1, amsgrad=True)   # clipnorm is necessary to prevent gradients from blowing up (weights = NaN)
 for SNR in np.arange(SNR, SNR+1, 2):
-    for delta in np.arange(1, 6):
+    for delta in np.arange(1, 5):
         print('delta = ', delta)
         cae = Model(inp, Decoder()(Channel()(Encoder()(inp))))
         # model training
@@ -113,8 +113,7 @@ for SNR in np.arange(SNR, SNR+1, 2):
     cae.load_weights('saved_weights.h5')
     cae.save('Trained/inputs_'+str(M)+'_del_'+str(delta)+'_snr_'+str(SNR)+'.h5')
             
-predict = cae.predict(data)
-
+predict = cae.predict(xdata)
 print(predict)
 '''
 encoder = cae.layers[1]
