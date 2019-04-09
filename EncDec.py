@@ -13,11 +13,11 @@ from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 
 # definitions
 M = 64
-L = 5
-numepochs = 50
-batchsize = 64
+L = 3
+numepochs = 100
+batchsize = M
 C = 1 # average signal strength is unity (not 100% accurate but hopefully good enough to test)
-SNR = 200
+SNR = 20
 
 # One hot encoding/data generation
 rawdata = np.zeros(M)
@@ -51,7 +51,7 @@ def Encoder():
 def Channel():
     input_img = Input(shape=(L, L, 1))
     d01 = UpSampling2D(size=(4,4))(input_img)
-    d02 = ZeroPadding2D(padding=4)(d01)
+    d02 = ZeroPadding2D(padding=int((28-4*L)/2))(d01)
     d03 = GaussianNoise(stddev=np.sqrt(C/(10**(SNR/10))))(d02)        # add noise to channel simulation
     return Model(input_img, d03)
 def Decoder():
@@ -91,57 +91,36 @@ callbacks = [History(),
              ModelCheckpoint(filepath='saved_weights.h5', monitor='loss', save_best_only=True, save_weights_only=True),
              EarlyStopping(monitor='loss', patience=50)]
 adam = keras.optimizers.Adam(clipnorm=1., clipvalue=0.1, amsgrad=True)   # clipnorm is necessary to prevent gradients from blowing up (weights = NaN)
-for SNR in np.arange(SNR, SNR+1, 2):
-    for delta in np.arange(1, 5):
-        print('delta = ', delta)
-        cae = Model(inp, Decoder()(Channel()(Encoder()(inp))))
-        # model training
-        cae.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
-        if delta != 1:
-            cae.load_weights('saved_weights.h5')
-        cae.fit(xdata, ydata, epochs=numepochs, batch_size=batchsize, callbacks=callbacks)
-        plt.plot(callbacks[0].history['loss'], label=('delta: '+str(delta)))
-    plt.title('Model loss')
-    plt.ylabel('Loss')
-    plt.xlabel('Epoch')
-    plt.legend(loc='upper left')
-    plt.savefig('TrainingGraphs/inputs_'+str(M)+'_del_'+str(delta)+'_snr_'+str(SNR)+'.png')
-    plt.clf()
-
-    cae = Model(inp, Decoder()(Channel()(Encoder_Test()(inp))))
+for delta in np.arange(1, 5):
+    print('delta = ', delta)
+    cae = Model(inp, Decoder()(Channel()(Encoder()(inp))))
+    # model training
     cae.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
-    cae.load_weights('saved_weights.h5')
-    cae.save('Trained/inputs_'+str(M)+'_del_'+str(delta)+'_snr_'+str(SNR)+'.h5')
+    if delta != 1:
+        cae.load_weights('saved_weights.h5')
+    cae.fit(xdata, ydata, epochs=numepochs, validation_data=(xvaldata, yvaldata), batch_size=batchsize, callbacks=callbacks)
+    plt.plot(callbacks[0].history['loss'], label=('delta: '+str(delta)))
+plt.title('Model loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend(loc='upper left')
+plt.savefig('TrainingGraphs/inputs_'+str(M)+'_L_'+str(L)+'_snr_'+str(SNR)+'.png')
+plt.clf()
+
+cae = Model(inp, Decoder()(Channel()(Encoder_Test()(inp))))
+cae.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
+cae.load_weights('saved_weights.h5')
+cae.save('Trained/inputs_'+str(M)+'_L_'+str(L)+'_snr_'+str(SNR)+'.h5')
             
-predict = cae.predict(xdata)
-print(predict)
+#predict = cae.predict(xdata)
+#print(predict)
+
 '''
-encoder = cae.layers[1]
-decoder = cae.layers[3]
-encoder.summary()
-decoder.summary()
-encoder.save_weights('encoder_weights.h5')
-decoder.save_weights('decoder_weights.h5')
-encoder.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=['accuracy'])
-decoder.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=['accuracy'])
-encoder.load_weights('encoder_weights.h5')
-decoder.load_weights('decoder_weights.h5')
-encoder.save('trained_encoder.h5')
-decoder.save('trained_decoder.h5')
-
-predicted = encoder.predict(xdata)
-
-
-# Plot training & validation loss values
-
-
-
 # Plot training & validation accuracy values
-plt.plot(callbacks[2].history['acc'])
-plt.plot(callbacks[2].history['val_acc'])
+plt.plot(callbacks[0].history['acc'])
+plt.plot(callbacks[0].history['val_acc'])
 plt.title('Model accuracy')
 plt.ylabel('Accuracy')
 plt.xlabel('Epoch')
 plt.legend(['Train', 'Test'], loc='upper left')
 plt.show()'''
-
